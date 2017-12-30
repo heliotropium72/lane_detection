@@ -108,6 +108,23 @@ def saturation(RGBimage):
     hls = RGB_to_HLS(RGBimage)
     return hls[:,:,2]   
 
+def plot_HLS(image, savepath=None):
+    ''' plot the resulting HLS channels'''
+    hls = RGB_to_HLS(image)
+    title = ['Hue', 'Lightness', 'Saturation']
+    fig, axs = plt.subplots(1,3, figsize=(9, 3))
+    fig.subplots_adjust(hspace = .1, wspace=.1)
+    axs = axs.ravel()
+    for i in range(3):
+        axs[i].axis('off')
+        axs[i].set_title(title[i])
+        axs[i].imshow(hls[:,:,i], cmap='Greys_r')
+    if savepath is not None:
+        plt.savefig(savepath)
+
+#for img in range(8):
+#    plot_HLS(images[img], savepath='Figures/hls_{}.png'.format(img))
+
 def binary_threshold(image, thresh=(0,255)):
     binary = np.zeros_like(image)
     binary[(image >= thresh[0]) & (image <= thresh[1])] = 1
@@ -289,8 +306,8 @@ def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
 # Combine everything to a pipeline
 import copy
     
-def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
-             previous_lanes=[None], reset=False, show=False):
+def pipeline(image, s_thresh=(170, 255), sx_thresh=(50, 150),
+             previous_lanes=[None], show=False):
     img_o = np.copy(image)
     
     img = dist.undistort(img_o)
@@ -298,13 +315,18 @@ def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
     img_s = saturation(img)
     binary_s = binary_threshold(img_s, s_thresh)
     
-    #img_h = hue(img)
-    img_sobel = sobel(img_s)
+    # Only white, non obscured lines
+    img_l = lightness(img)
+    binary_l = binary_threshold(img_l, (200,255))
+    
+    # obscured lines
+    img_sobel = sobel(img_l)
     binary_sobel = binary_threshold(img_sobel, sx_thresh)
     
     # Combine the two binary thresholds
     combined_binary = np.zeros_like(binary_sobel)
-    combined_binary[(binary_s == 1)]=1# | (binary_sobel == 1)] = 1
+    #combined_binary[(binary_s == 1) | (binary_sobel == 1)] = 1
+    combined_binary[(binary_s==1) | (binary_l==1) | (binary_sobel==1)] = 1
 
     warped_binary = birdseye(combined_binary, src, dst)
     
@@ -329,11 +351,20 @@ def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
         #Retry
         print('Reset lane detection')
         lane = sliding_window(warped_binary, previous_lane=None)
-        if lane.detected:    
+        lane.previous = previous_lanes
+        lane.check_sanity()
+        if lane.detected and lane.sanity:    
             result_img = cv2.addWeighted(img, 1, lane.warp_lane(Minv), 0.3, 0)
         else:
-            print('Lane could not be detected')
-            result_img = img
+            print('Lane could not be detected. Keep the detection from frame before')
+            try:
+                #Instead of rolling back; just use an average of the 5 previous detections
+                lane = previous_lanes[-1]
+                result_img = cv2.addWeighted(img, 1, lane.warp_lane(Minv), 0.3, 0)
+            except TypeError:
+                print('No previous lanes available for roll-back.')
+                result_img = img
+            
 
     ###
     if show:
@@ -347,11 +378,14 @@ def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
         img_e = copy.copy(img)
         img_e = draw_roi(img_e, src)
         axs[1].imshow(img_e)
-        axs[2].set_title('Saturation channel')
-        axs[2].imshow(img_s, cmap='Greys_r')
+        axs[2].set_title('Lightness channel thresholded')#Saturation channel')
+        #axs[2].imshow(img_s, cmap='Greys_r')
+        axs[2].imshow(binary_l, cmap='Greys_r')
         axs[3].set_title('Saturation channel thresholded')
+        #s = image.shape
+        #binary_s_color = np.zeros((s[0], s[1], 3), dtype=np.uint8)
         axs[3].imshow(binary_s, cmap='Greys_r')
-        axs[4].set_title('Sobel of saturation channel')
+        axs[4].set_title('Sobel of lightness channel')
         axs[4].imshow(img_sobel, cmap='Greys_r')
         axs[5].set_title('Sobel thresholded')
         axs[5].imshow(binary_sobel, cmap='Greys_r')
@@ -423,12 +457,12 @@ def test(image):
     return img
 
 video1_output = 'Videos/video1_detected.mp4'
-clip1 = VideoFileClip("video1.mp4").subclip(0,5)
+clip1 = VideoFileClip("video1.mp4")#.subclip(0,5)
 video1 = clip1.fl_image(test)
 video1.write_videofile(video1_output, audio=False)
 
 video2_output = 'Videos/video2_detected.mp4'
-clip2 = VideoFileClip("video2.mp4").subclip(0,5)
+clip2 = VideoFileClip("video2.mp4")
 video2 = clip2.fl_image(test)
 video2.write_videofile(video2_output, audio=False)
 

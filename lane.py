@@ -79,7 +79,7 @@ class Line():
         #return self._curvature(y_eval, fit_meter)
 
     def check_curvature(self, previous,
-                        threshold=300, min_value=0, straight_value=2000):
+                        threshold=300, min_value=100, straight_value=2000):
         ''' Compare the found curvature with a previous curvature '''
         if self.radius_of_curvature > straight_value:
             return True

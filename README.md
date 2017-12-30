@@ -95,6 +95,10 @@ As a first step, the images are distortion corrected using the function describe
 Next, the image is converted to the HLS colour space using ```cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)```.
 The HLS space has the advantage that the image is separated in hue (H), lightness (L) and saturation (S) channels. Differences in illumination (e.g. tree shadows) will not affect the saturation channel.
 Hence, thresholds of the saturation channel are more universal than thresholds of a colour (red, green, blue) channel.
+The lightness channel measures the amount of white. It can be efficiently used with a high threshold to detect white line markings (which are not obscured by shadows). Although it can only a detect a limited fraction of the lane 
+i.e. intensive white stripes, it does it with high confidentiality and hence is a good starting point to make the pipeline more robust.
+The saturation channel detects the intensive yellow lines and partly the white lines. A threshold of the saturation channel is therefore used as backbone of the pipeline.
+
 
 ![alt text] [image_hls]
 
@@ -148,8 +152,13 @@ The above pipeline was then applied to the video provided by Udacity. The result
 
 ### Discussion: Challenges and improvements
 
+- Perspective Transform
 The selection of the source points for the perspective tranform is important as the quality of the warped images and therefore polynomial fit is highly sensitive to it. These points were selected by hand. It might be possible to 
 improve the pipeline by barely tweaking these source points. E.g. by reducing the vertical extension of the lane, the pipeline becomes more robust on the one hand but the detected lane is shorter on the other hand.
 
+- Missing stripes
 The pipeline cannot handle missing stripes. For example, when the right lane is often interrupted and thus detected lane-line pixel are only in the lower half of the birds-eye view image,
 the polynomial fit is likely to be off for the pixel towards the upper end of the lane. This could be possibly improved by applying a rolling average over the k last images or by tuning the thresholds even more.
+
+- Defined shadows
+The shadow of a wall as in the udacity video 2 is still a challenge for the pipeline as the gradient is very strong. Such a shadow is more likely to be detected as lane line than the actual line
