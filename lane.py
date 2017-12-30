@@ -43,7 +43,7 @@ class Line():
         self.lane_x = None  
         #y values for detected line pixels
         self.lane_y = None
-        
+    
     def fit_lane(self, binary_warped, lane_inds):
         
         nonzero = binary_warped.nonzero()
@@ -54,9 +54,13 @@ class Line():
         self.lane_x = nonzerox[lane_inds]
         self.lane_y = nonzeroy[lane_inds] 
 
-        # Fit a second order polynomial to each
-        self.current_fit = np.polyfit(self.lane_y, self.lane_x, 2)
-        self.current_poly = np.poly1d(self.current_fit)
+        try:
+            # Fit a second order polynomial to each
+            self.current_fit = np.polyfit(self.lane_y, self.lane_x, 2)
+            self.current_poly = np.poly1d(self.current_fit)
+            self.detected = True
+        except:
+            self.detected = False
 
     def _curvature(self, y, fit_coeff):
             numerator = ((1 + (2*fit_coeff[0]*y*Line.ym_per_pix + fit_coeff[1])**2)**1.5)
@@ -64,25 +68,57 @@ class Line():
             return numerator / denominator
 
     def calculate_curvature(self):
+        if not self.detected:
+            #print('Lane was not detected')
+            return
+        
         fit_meter = np.polyfit(self.lane_y * Line.ym_per_pix,
                                       self.lane_x * Line.xm_per_pix, 2)
         y_eval = Line.Ny_w
         self.radius_of_curvature = self._curvature(y_eval, fit_meter)
+        #return self._curvature(y_eval, fit_meter)
 
 class Lane():
     ''' Full lane, containg two line objects '''
     
-    def __init__(self, left, right):
-        self.detected = False
-        
+    def __init__(self, left, right, previous=[None]):
+        '''
+        Parameter:
+        left : Line object
+            containing information about the left lane border
+        right : Line object
+            containing information about the right lane border
+        prvious: list of Lane objects
+            previously detected lanes with the last list element is the
+            most recent one
+        '''
+            
         self.left = left
         self.right = right
+        
+        self.__detected = self.left.detected and self.right.detected
+        self.__sanity = False
         
         #distance in meters of vehicle center from the line
         self.line_base_pos = None
         self.calculate_distance()
-        
+    
+        self.previous = previous
+    
+    @property
+    def detected(self):
+        self.__detected = self.left.detected & self.right.detected
+        return self.__detected
+
+    @detected.setter
+    def detected(self, value):
+        self.__detected = value
+             
     def calculate_distance(self):
+        if not self.detected:
+            self.line_base_pos = None
+            return
+        
         left_base_x = self.left.current_poly(Line.Ny_w)
         right_base_x = self.right.current_poly(Line.Ny_w)
         center_x = Line.Nx_w/2
@@ -96,8 +132,26 @@ class Lane():
         if (np.abs(self.left.radius_of_curvature - 
                   self.right.radius_of_curvature) > 500):
             sanity = False
-        self.detected = sanity
+        self.__sanity = sanity
 
+    ### Previous elements
+    def previous_curvatures(self):
+        ''' average of previous curvatures '''
+        
+        if self.previous[-1] is None:
+            print('Warning: Last lane object is none.')
+            return None, None
+        
+        curv_left = []
+        curv_right = []
+        for lane in self.previous:
+            if lane is not None:
+                curv_left.append(lane.left.radius_of_curvature)
+                curv_right.append(lane.right.radius_of_curvature)
+        
+        #print(np.mean(curv_left), np.mean(curv_right))
+        return np.mean(curv_left), np.mean(curv_right)
+            
     ### Visualisation
 
     def output_string(self):
@@ -108,10 +162,14 @@ class Lane():
     
     
     def warp_lane(self, Minv):
+        ''' Draw the warped line on a blank (color) image '''
         color_warp = np.zeros((Line.Ny_w, Line.Nx_w, 3), dtype=np.uint8)
         #warp_zero = np.zeros_like(warped_binary).astype(np.uint8)
         #color_warp = np.dstack((warp_zero, warp_zero, warp_zero))
     
+        if not self.detected:
+            return color_warp
+        
         # generate points
         rows = range(Line.Ny_w)
         left_lane = self.left.current_poly(rows)
@@ -126,7 +184,24 @@ class Lane():
         cv2.fillPoly(color_warp, np.int_([pts]), (0,255, 0))
     
         # Warp the blank back to original image space using inverse perspective matrix (Minv)
-        newwarp = cv2.warpPerspective(color_warp, Minv, (Line.Nx, Line.Ny)) 
+        newwarp = cv2.warpPerspective(color_warp, Minv, (Line.Nx, Line.Ny))
+        
+        # Add text
+        left_curv = 'Left curvature {:.1f}m'.format(self.left.radius_of_curvature)
+        right_curv = 'Right curvature {:.1f}m'.format(self.right.radius_of_curvature)
+        center = 'Distance to lane center: {:.2f}m'.format(self.line_base_pos)
+        cv2.putText(newwarp, left_curv, org=(25,40), fontFace=0,
+                    fontScale=1, color=(0, 255, 0), thickness=2)
+        cv2.putText(newwarp, right_curv, org=(25,80), fontFace=0,
+                    fontScale=1, color=(0, 255, 0), thickness=2)
+        cv2.putText(newwarp, center, org=(25,120), fontFace=0,
+                    fontScale=1, color=(0, 255, 0), thickness=2)
+        try:
+            l, r = self.previous_curvatures()
+            cv2.putText(newwarp, '{:.1f}m, {:.1f}m'.format(l,r), org=(25,160), fontFace=0,
+                    fontScale=1, color=(0, 255, 0), thickness=2)
+        except:
+            pass
         return newwarp
         # Combine the result with the original image
         #result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
@@ -143,6 +218,9 @@ class Lane():
     
     def plot(self, image=None, ax=None):
         out_img = np.dstack((image, image, image))*255
+        
+        if not self.detected:
+            return out_img
         
         # Fit results
         rows = range(Line.Ny_w)

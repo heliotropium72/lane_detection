@@ -1,12 +1,13 @@
 # Lane Detection
 [![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
-Term 1, Project 4: Advanced Lane Finding
-Keywords: Computer Vision, Camera Calibration, Perspective Transform
+
+### Term 1, Project 4: Advanced Lane Finding
+### Keywords: Computer Vision, Camera Calibration, Perspective Transform
 
 ---
 
 In this project the lane lines on a highway course are detected based on computer vision and directly drawn on the images of the frontal camera. Checkout the [project rubric](https://review.udacity.com/#!/rubrics/571/view) for more details.
-The software pipline contains the following steps
+The software pipeline contains the following steps
 
 * Camera calibration matrix and distortion coefficients given a set of chessboard images.
 * Distortion correction to raw images.
@@ -35,16 +36,16 @@ xx
 ### Camera Calibration
 
 #### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
-The file `undistort.py` contains all code necessary for the camera calibration and the function `undistort(<singel image>)` which is used in the pipeline of the video stream.
+The file `undistort.py` contains all code necessary for the camera calibration and the function `undistort(<single image>)` which is used in the pipeline of the video stream.
 The camera calibration is determined using a 9x6 chessboard. 20 images of this chessboard can be found in the folder "camera_cal". The camera calibration is performed by mapping the corner points of the chessboard `objpts` (which are symmetrical)
-to their image points `imgpoints`.
-The points in the image plane and the 3d-plane are saved in the lists `imgpoints` and `objpoints` for all 20 iamges.
-The `objpoints` is easily created due to the symmetry of the chessboard. The chessboard is assumed to be fixed on the xy-plane (z=0) with the first point in the origin.
+to their image points `imgpts`.
+The points in the image plane and the 3d-plane are saved in the lists `imgpts` and `objpts` for all 20 images.
+The `objpts` is easily created due to the symmetry of the chessboard. The chessboard is assumed to be fixed on the xy-plane (z=0) with the first point in the origin.
 The measure of the coordinate system is such that the distance between two corners corresponds to 1 measure i.e. the points are [(0,0,0), (1,0,0), (2,0,0), ..., (9,6,0)]. The set of one set of object points in one image is saved in `objp`.
 The `imgpts` contains the position of the corners in the image plane òf a single image `corners` which are detected making using of the OpenCV function cv2.findChessboardCorners(). They are further refined to subpixel level by using cv2.cornerSubPix().
 After every succesful detection of the corners, the set of `corners` and `objp is appended to `imgpts` and `objpts` respectively.
 
-I then used the output `objpoints` and `imgpoints` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.
+I then used the output `objpts` and `imgpts` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.
 The camera matrix of the camera used in this project is
 
 		1156.94	0		665.948

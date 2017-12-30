@@ -40,21 +40,31 @@ images = []
 
 for fname in image_files:
     images.append(mpimg.imread(os.path.join(fname)))
-    
+'''    
 fig, axs = plt.subplots(4,2, figsize=(8, 8))
 fig.subplots_adjust(hspace = .1, wspace=.1)
 axs = axs.ravel()
 for i in range(8):
     axs[i].axis('off')
     axs[i].imshow(images[i])
-    
+'''   
 
 ###############################################################################
 # Parameter for pipeline
 
+'''
+| Source        | Destination   | 
+|:-------------:|:-------------:| 
+| 585, 460      | 320, 0        | 
+| 203, 720      | 320, 720      |
+| 1127, 720     | 960, 720      |
+| 695, 460      | 960, 0        |
+'''
+
 #Birdseye view
 s = images[0].shape
-src = np.float32([[600,445], [679,445], [247,680], [1057,680]])
+#src = np.float32([[600,445], [679,445], [247,680], [1057,680]])
+src = np.float32([[578,460], [705,460], [247,680], [1057,680]])
 x_o = 150 # offset
 dst = np.float32([[x_o,0], [s[1]-x_o,0], [x_o,s[0]], [s[1]-x_o,s[0]]])
 
@@ -145,7 +155,7 @@ def _sliding_window(image, n_windows, x_margin, minpix, show=False):
     
     # Find the start point at the bottom line using a histogram approach
     # Take a histogram of the bottom half of the image
-    histogram = np.sum(image[Ny/2:,:], axis=0)
+    histogram = np.sum(image[int(Ny/2):,:], axis=0)
     # The histogram peaks in the left and right half are the start points of the lanes
     midpoint = np.int(histogram.shape[0]/2)
     leftx_base = np.argmax(histogram[:midpoint])
@@ -234,7 +244,10 @@ def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
     nonzeroy = np.array(nonzero[0])
     nonzerox = np.array(nonzero[1])
     
-    if not first:
+    if previous_lane is not None:
+        
+        if not previous_lane.detected:
+            print('Lane lines could not be detected in previous image.')
         # Initial position of the lane lines are remembered in two fit polynoms
         try:
             left_x_pred = previous_lane.left.current_poly(nonzeroy)
@@ -263,6 +276,7 @@ def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
     right.calculate_curvature()
 
     lane = l.Lane(left, right)
+    
     #lane.plot(image)
     """
     # Extract left and right line pixel positions
@@ -323,7 +337,7 @@ def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
 import copy
     
 def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
-             previous_lane=None, reset=False, show=False):
+             previous_lanes=[None], reset=False, show=False):
     img_o = np.copy(image)
     
     img = dist.undistort(img_o)
@@ -341,15 +355,25 @@ def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
 
     warped_binary = birdseye(combined_binary, src, dst)
     
-    if reset:
-        lane = sliding_window(warped_binary, first=True, show=False)
-    else:
-        lane = sliding_window(warped_binary, previous_lane=previous_lane,
+    if previous_lanes[-1] is not None:
+        lane = sliding_window(warped_binary, previous_lane=previous_lanes[-1],
                               first=False, show=False)
+    else:
+        lane = sliding_window(warped_binary, previous_lane=None, show=False)
+
+    lane.previous = previous_lanes
 
     ### Do some checks
     ### Save values
 
+    # Image returned for the video stream
+    if lane.detected:    
+        result_img = cv2.addWeighted(img, 1, lane.warp_lane(Minv), 0.3, 0)
+    else:
+        print('Reset lane detection')
+        result_img = img
+
+    ###
     if show:
         fig, axs = plt.subplots(3,3, figsize=(8, 8))
         #fig.subplots_adjust(hspace = .1, wspace=.1)
@@ -387,22 +411,24 @@ def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
             
         fig.tight_layout()
         
-    return lane
+    return lane, result_img
 
 ###############################################################################
 # Apply the functions
 
-result = pipeline(images[4], s_thresh=(120,255), sx_thresh=(20,100),
-                  reset=True, show=True)
-"""
-lane_first = sliding_window(result, first=True, show=False)
+#result = pipeline(images[4], s_thresh=(120,255), sx_thresh=(20,100),
+#                  reset=True, show=True)
 
-lane_new = sliding_window(result, previous_lane=lane_first,
-                          first=False, show=False)
-"""
+lane_first = pipeline(images[0], show=True)[0]
+#lane_new, img_new =  pipeline(images[4], previous_lanes=[lane_first], show=False)
+#plt.imshow(img_new)
+#sliding_window(result, previous_lane=lane_first,
+#                          first=False, show=False)
+
 #Minv = cv2.getPerspectiveTransform(dst, src)
 #plot_result(images[4], result, Minv, left_poly2, right_poly2)
 
+'''
 # Test on all test images
 fig, axs = plt.subplots(4,2, figsize=(8, 8))
 fig.subplots_adjust(hspace = .1, wspace=.1)
@@ -411,7 +437,41 @@ for i in range(8):
     axs[i].axis('off')
     #axs[i].imshow(images[i])
     lane = pipeline(images[i], s_thresh=(120,255), sx_thresh=(20,100),
-                    reset=True, show=False)
+                    reset=True, show=False)[0]
     img = dist.undistort(images[i])  
     undist_with_lane = cv2.addWeighted(img, 1, lane.warp_lane(Minv), 0.3, 0)
     axs[i].imshow(undist_with_lane)
+ '''   
+    
+###############################################################################
+# Video stream from the first project
+ 
+import sys
+sys.exit()
+    
+# Import everything needed to edit/save/watch video clips
+from moviepy.editor import VideoFileClip
+#from IPython.display import HTML
+
+prev = [None, None, None, None, None]
+def test(image):
+    lane, img = pipeline(image, previous_lanes=prev)
+    prev.append(lane)
+    prev.pop(0)
+    return img
+
+video1_output = 'Videos/video1_detected.mp4'
+clip1 = VideoFileClip("video1.mp4")
+video1 = clip1.fl_image(test)
+video1.write_videofile(video1_output, audio=False)
+
+video2_output = 'Videos/video2_detected.mp4'
+clip2 = VideoFileClip("video2.mp4").subclip(0,5)
+video2 = clip2.fl_image(test)
+video2.write_videofile(video2_output, audio=False)
+
+## To speed up the testing process you may want to try your pipeline on a shorter subclip of the video
+## To do so add .subclip(start_second,end_second) to the end of the line below
+## Where start_second and end_second are integer values representing the start and end of the subclip
+## You may also uncomment the following line for a subclip of the first 5 seconds
+#clip1 = VideoFileClip("test_videos/solidWhiteRight.mp4").subclip(0,5)
