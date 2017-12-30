@@ -4,6 +4,14 @@
 ### Term 1, Project 4: Advanced Lane Finding
 ### Keywords: Computer Vision, Camera Calibration, Perspective Transform
 
+
+[//]: # (Image References)
+
+[image1]: ./Figures/Distortion.png "Undistorted"
+[image_test]: ./Figures/Test_images.png "Test images"
+[images_test_d]: ./Figures/Test_images_detected.png "Test images"
+[video1]: ./Videos/video1_detected.mp4 "Video"
+
 ---
 
 In this project the lane lines on a highway course are detected based on computer vision and directly drawn on the images of the frontal camera. Checkout the [project rubric](https://review.udacity.com/#!/rubrics/571/view) for more details.
@@ -22,20 +30,11 @@ The pipeline was first tested on 8 test images and then on the video streams ...
 xx 
 
 
-[//]: # (Image References)
 
-[image1]: ./Figures/Distortion.png "Undistorted"
-[image2]: ./test_images/test1.jpg "Road Transformed"
-[image3]: ./examples/binary_combo_example.jpg "Binary Example"
-[image4]: ./examples/warped_straight_lines.jpg "Warp Example"
-[image5]: ./examples/color_fit_lines.jpg "Fit Visual"
-[image6]: ./examples/example_output.jpg "Output"
-[video1]: ./project_video.mp4 "Video"
 ---
 
 ### Camera Calibration
 
-#### 1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
 The file `undistort.py` contains all code necessary for the camera calibration and the function `undistort(<single image>)` which is used in the pipeline of the video stream.
 The camera calibration is determined using a 9x6 chessboard. 20 images of this chessboard can be found in the folder "camera_cal". The camera calibration is performed by mapping the corner points of the chessboard `objpts` (which are symmetrical)
 to their image points `imgpts`.
@@ -48,9 +47,11 @@ After every succesful detection of the corners, the set of `corners` and `objp i
 I then used the output `objpts` and `imgpts` to compute the camera calibration and distortion coefficients using the `cv2.calibrateCamera()` function.
 The camera matrix of the camera used in this project is
 
+```
 		1156.94	0		665.948
 mtx = 	0		1152.13	388.786
 		0		0		1
+```
 
 and the distortion parameters are `dist` = [-0.238, -0.085, -0.0008, -0.0001, 0.106].
 
@@ -67,38 +68,33 @@ def undistort(img, mtx=mtx, dist=dist):
 ```
 The camera matrix `mtx` and the distortion parameters `dist` are the ones which were determines before.
 
+---
 
-### Implementation
+### Lane detection pipeline
 
-#### 1. Provide an example of a distortion-corrected image.
+The lane detection pipeline applied to a single image is summarised in the following graph. In the following the single steps are described in more detail.
 
-To demonstrate this step, I will describe how I apply the distortion correction to one of the test images like this one:
-![alt text][image2]
+![alt text][image]
 
-#### 2. Describe how (and identify where in your code) you used color transforms, gradients or other methods to create a thresholded binary image.  Provide an example of a binary image result.
+#### 1. Distortion correction
+As a first step, the images are distortion corrected using the function described above
 
-I used a combination of color and gradient thresholds to generate a binary image (thresholding steps at lines # through # in `another_file.py`).  Here's an example of my output for this step.  (note: this is not actually from one of the test images)
+#### 2. HLS colour space
+Next, the image is converted to the HLS colour space using ```cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)```.
+The HLS space has the advantage that the image is separated in hue (H), lightness (L) and saturation (S) channels. Differences in illumination (e.g. tree shadows) will not affect the saturation channel.
+Hence, thresholds of the saturation channel are more universal than thresholds of a colour (red, green, blue) channel.
 
-![alt text][image3]
+![alt text] [image_hls]
 
-#### 3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
+#### 3. Threshold of saturation channel
+...
+...
+...
+binary output image
 
-The code for my perspective transform includes a function called `warper()`, which appears in lines 1 through 8 in the file `example.py` (output_images/examples/example.py) (or, for example, in the 3rd code cell of the IPython notebook).  The `warper()` function takes as inputs an image (`img`), as well as source (`src`) and destination (`dst`) points.  I chose the hardcode the source and destination points in the following manner:
-
-```python
-src = np.float32(
-    [[(img_size[0] / 2) - 55, img_size[1] / 2 + 100],
-    [((img_size[0] / 6) - 10), img_size[1]],
-    [(img_size[0] * 5 / 6) + 60, img_size[1]],
-    [(img_size[0] / 2 + 55), img_size[1] / 2 + 100]])
-dst = np.float32(
-    [[(img_size[0] / 4), 0],
-    [(img_size[0] / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), img_size[1]],
-    [(img_size[0] * 3 / 4), 0]])
-```
-
-This resulted in the following source and destination points:
+#### 4. Perspective Transform
+The binary images are transformed to a birds-eye view using the function ```birdseye(image, src, dst)```. For this end, four points spanning a straight lane (on test image 0 ) are selected. These are transformed to the corners of a new, birds-eye view image.
+These source and destination points were hard-coded:
 
 | Source        | Destination   | 
 |:-------------:|:-------------:| 
@@ -106,37 +102,48 @@ This resulted in the following source and destination points:
 | 203, 720      | 320, 720      |
 | 1127, 720     | 960, 720      |
 | 695, 460      | 960, 0        |
+ 
 
-I verified that my perspective transform was working as expected by drawing the `src` and `dst` points onto a test image and its warped counterpart to verify that the lines appear parallel in the warped image.
+#### 5. Lane-line pixel selection
+sliding window depending if previous lane is provided or not.
 
-![alt text][image4]
+#### 6. 2nd order polynomial describing the lanes in birdseye view
+In birdseye view, the lane lines can be described by a second order polynomial. The polynomials are fitted to all detected lane-line pixels. The area between the left and right line polynomial is then ascribed to the lane.
 
-#### 4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
+#### 7. Derived parameters
+Several parameters can be calculated from the resulting lane. These parameters can then be used to check whether the result is reasonable.
+First, the curvature for every lane line is calculated from the polynomial.
+...
+Offset from lane center.
+...
 
-Then I did some other stuff and fit my lane lines with a 2nd order polynomial kinda like this:
+The parameters will be directly plotted into the resulting image
 
-![alt text][image5]
+#### 8. Sanity check
+... checks ... restart if necessary ...
 
-#### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-I did this in lines # through # in my code in `my_other_file.py`
-
-#### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
-
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
-
-![alt text][image6]
-
----
-
-### Pipeline (video)
-
-#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
-
-Here's a [link to my video result](./project_video.mp4)
+#### 10. Pipeline applied to the 8 test images
+![alt text][images_test_d]
 
 ---
 
-### Discussion
+### Implementation
+The code is organised in two main classes: The `Line` class containing information about either the left or the right lane-line and the `Lane`class which has corresponding pair of left and right lane-lines as input.
+The `Lane` class further contains a memory `Lane.previous`, so that the newly detected lane-lines can be compared to the previous ones.
 
-#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+---
+
+### Result
+The above pipeline was then applied to the video provided by Udacity. The result can be seen [here] (./Videos/video1_detected.mp4)
+
+
+---
+
+### Discussion: Challenges and improvements
+
+The selection of the source points for the perspective tranform is important as the quality of the warped images and therefore polynomial fit is highly sensitive to it. These points were selected by hand. It might be possible to 
+improve the pipeline by barely tweaking these source points. E.g. by reducing the vertical extension of the lane, the pipeline becomes more robust on the one hand but the detected lane is shorter on the other hand.
+
+The pipeline cannot handle missing stripes. For example, when the right lane is often interrupted and thus detected lane-line pixel are only in the lower half of the birds-eye view image,
+the polynomial fit is likely to be off for the pixel towards the upper end of the lane. This could be possibly improved by applying a rolling average over the k last images or by tuning the thresholds even more.

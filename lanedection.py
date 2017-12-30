@@ -64,7 +64,7 @@ for i in range(8):
 #Birdseye view
 s = images[0].shape
 #src = np.float32([[600,445], [679,445], [247,680], [1057,680]])
-src = np.float32([[578,460], [705,460], [247,680], [1057,680]])
+src = np.float32([[578,460], [705,460], [235,690], [1069,690]])
 x_o = 150 # offset
 dst = np.float32([[x_o,0], [s[1]-x_o,0], [x_o,s[0]], [s[1]-x_o,s[0]]])
 
@@ -221,7 +221,7 @@ def _sliding_window(image, n_windows, x_margin, minpix, show=False):
     
 
 def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
-                   previous_lane=None, show=True):
+                   previous_lane=None, show=False):
     '''
     Parameters
     ----------
@@ -244,11 +244,19 @@ def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
     nonzeroy = np.array(nonzero[0])
     nonzerox = np.array(nonzero[1])
     
-    if previous_lane is not None:
-        
+    # Refind lanes
+    if previous_lane is None:
+        reset = True
+    else:
+        reset = False
         if not previous_lane.detected:
-            print('Lane lines could not be detected in previous image.')
-        # Initial position of the lane lines are remembered in two fit polynoms
+            reset = True
+        if not previous_lane.sanity:
+            reset = True
+    
+    if reset:
+        left_lane_inds, right_lane_inds, out_img = _sliding_window(image, n_windows, x_margin, minpix, show=show)  
+    else:
         try:
             left_x_pred = previous_lane.left.current_poly(nonzeroy)
             right_x_pred = previous_lane.right.current_poly(nonzeroy)
@@ -261,11 +269,7 @@ def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
                                              nonzerox < (right_x_pred + x_margin))
         except:
             #raise ValueError
-            print('Polynomes are not defined. Set polynoms or use first=True')
-        
-    else:
-        left_lane_inds, right_lane_inds, out_img = _sliding_window(image, n_windows, x_margin, minpix, show=show)
-
+            print('Polynomes of previous lane are not defined.')
 
     left = l.Line()
     left.fit_lane(image, left_lane_inds)
@@ -278,59 +282,8 @@ def sliding_window(image, n_windows=9, x_margin=100, minpix=50, first=True,
     lane = l.Lane(left, right)
     
     #lane.plot(image)
-    """
-    # Extract left and right line pixel positions
-    leftx = nonzerox[left_lane_inds]
-    lefty = nonzeroy[left_lane_inds] 
-    rightx = nonzerox[right_lane_inds]
-    righty = nonzeroy[right_lane_inds] 
 
-    # Fit a second order polynomial to each
-    left_fit = np.polyfit(lefty, leftx, 2)
-    right_fit = np.polyfit(righty, rightx, 2)
-    # Functional form of the polynomials
-    left_fit_poly = np.poly1d(left_fit) 
-    right_fit_poly = np.poly1d(right_fit)
-
-
-    if show:
-        plt.figure()
-        # Fit results
-        rows = range(Ny)
-        left_fitx = left_fit_poly(rows)
-        right_fitx = right_fit_poly(rows)
-        # Originally detected points
-        out_img[nonzeroy[left_lane_inds], nonzerox[left_lane_inds]] = [255, 0, 0]
-        out_img[nonzeroy[right_lane_inds], nonzerox[right_lane_inds]] = [0, 0, 255]
-        if first:
-            plt.imshow(out_img)
-        else:
-            window_img = np.zeros_like(out_img)          
-            # Generate a polygon to illustrate the search window area
-            # And recast the x and y points into usable format for cv2.fillPoly()
-            left_line_window1 = np.array([np.transpose(
-                                    np.vstack([left_fitx-x_margin, rows]))])
-            left_line_window2 = np.array([np.flipud(np.transpose(
-                                    np.vstack([left_fitx+x_margin, rows])))])
-            left_line_pts = np.hstack((left_line_window1, left_line_window2))
-            right_line_window1 = np.array([np.transpose(
-                                    np.vstack([right_fitx-x_margin, rows]))])
-            right_line_window2 = np.array([np.flipud(np.transpose(
-                                    np.vstack([right_fitx+x_margin, rows])))])
-            right_line_pts = np.hstack((right_line_window1, right_line_window2))
-            
-            # Draw the lane onto the warped blank image
-            cv2.fillPoly(window_img, np.int_([left_line_pts]), (0,255, 0))
-            cv2.fillPoly(window_img, np.int_([right_line_pts]), (0,255, 0))
-            result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
-            plt.imshow(result)
-        
-        plt.plot(left_fitx, rows, color='yellow')
-        plt.plot(right_fitx, rows, color='yellow')
-        plt.xlim(0, 1280)
-        plt.ylim(720, 0)
-    """    
-    return lane #left_fit_poly, right_fit_poly
+    return lane
 
 ###############################################################################
 # Combine everything to a pipeline
@@ -356,22 +309,31 @@ def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
     warped_binary = birdseye(combined_binary, src, dst)
     
     if previous_lanes[-1] is not None:
-        lane = sliding_window(warped_binary, previous_lane=previous_lanes[-1],
-                              first=False, show=False)
+        lane = sliding_window(warped_binary, previous_lane=previous_lanes[-1])
     else:
-        lane = sliding_window(warped_binary, previous_lane=None, show=False)
+        lane = sliding_window(warped_binary, previous_lane=None)
 
     lane.previous = previous_lanes
 
     ### Do some checks
+    lane.check_sanity()
+    
+    if not lane.sanity:
+        pass
     ### Save values
 
     # Image returned for the video stream
     if lane.detected:    
         result_img = cv2.addWeighted(img, 1, lane.warp_lane(Minv), 0.3, 0)
     else:
+        #Retry
         print('Reset lane detection')
-        result_img = img
+        lane = sliding_window(warped_binary, previous_lane=None)
+        if lane.detected:    
+            result_img = cv2.addWeighted(img, 1, lane.warp_lane(Minv), 0.3, 0)
+        else:
+            print('Lane could not be detected')
+            result_img = img
 
     ###
     if show:
@@ -420,7 +382,7 @@ def pipeline(image, s_thresh=(170, 255), sx_thresh=(20, 100),
 #                  reset=True, show=True)
 
 lane_first = pipeline(images[0], show=True)[0]
-#lane_new, img_new =  pipeline(images[4], previous_lanes=[lane_first], show=False)
+lane_new, img_new =  pipeline(images[4], previous_lanes=[lane_first], show=False)
 #plt.imshow(img_new)
 #sliding_window(result, previous_lane=lane_first,
 #                          first=False, show=False)
@@ -461,7 +423,7 @@ def test(image):
     return img
 
 video1_output = 'Videos/video1_detected.mp4'
-clip1 = VideoFileClip("video1.mp4")
+clip1 = VideoFileClip("video1.mp4").subclip(0,5)
 video1 = clip1.fl_image(test)
 video1.write_videofile(video1_output, audio=False)
 

@@ -78,6 +78,16 @@ class Line():
         self.radius_of_curvature = self._curvature(y_eval, fit_meter)
         #return self._curvature(y_eval, fit_meter)
 
+    def check_curvature(self, previous,
+                        threshold=300, min_value=0, straight_value=2000):
+        ''' Compare the found curvature with a previous curvature '''
+        if self.radius_of_curvature > straight_value:
+            return True
+        if self.radius_of_curvature > min_value and (np.abs(self.radius_of_curvature - previous) < threshold):
+            return True
+        else:
+            return False
+
 class Lane():
     ''' Full lane, containg two line objects '''
     
@@ -113,7 +123,15 @@ class Lane():
     @detected.setter
     def detected(self, value):
         self.__detected = value
-             
+    
+    @property
+    def sanity(self):
+        return self.__sanity
+
+    @sanity.setter
+    def sanity(self, value):
+        self.__sanity = value
+         
     def calculate_distance(self):
         if not self.detected:
             self.line_base_pos = None
@@ -125,14 +143,35 @@ class Lane():
         car_x = ( right_base_x - left_base_x) / 2 + left_base_x
         self.line_base_pos = (center_x-car_x)*Line.xm_per_pix
 
+    def __check_curvatures(self, threshold=300):
+        '''
+        Check the curvature detection
+        On a straight line, curvature would be inifinity
+        On a curved line, curvature should be similar to the previous images
+        within a threshold
+        '''
+        left_avg, right_avg = self.previous_curvatures()
+        
+        left_success = self.left.check_curvature(previous=left_avg)
+        right_success = self.right.check_curvature(previous=right_avg)
+
+        return (left_success and right_success)
+
     def check_sanity(self):
-        sanity = True
+        if not self.detected:
+            self.__sanity = False
+            return
+        
+        sanity_tmp = True
         if np.abs(self.line_base_pos) > 1:
-            sanity = False
-        if (np.abs(self.left.radius_of_curvature - 
-                  self.right.radius_of_curvature) > 500):
-            sanity = False
-        self.__sanity = sanity
+            sanity_tmp = False
+        #if (np.abs(self.left.radius_of_curvature - 
+        #          self.right.radius_of_curvature) > 500):
+        #    sanity = False
+        if self.previous[-1] is not None:
+            if not self.__check_curvatures():
+                sanity_tmp = False
+        self.__sanity = sanity_tmp
 
     ### Previous elements
     def previous_curvatures(self):
@@ -155,10 +194,16 @@ class Lane():
     ### Visualisation
 
     def output_string(self):
-        left_curv = 'Left curvature {:.1f}m'.format(self.left.radius_of_curvature)
-        right_curv = 'Right curvature {:.1f}m'.format(self.right.radius_of_curvature)
-        center = 'Distance to lane center: {:.2f}m'.format(self.line_base_pos)
-        return left_curv + '\n' + right_curv + '\n' + center
+        try:
+            l, r = self.previous_curvatures()
+            left_curv = 'Left curvature {:.1f}m ({:.1f}m)'.format(self.left.radius_of_curvature, l)
+            right_curv = 'Right curvature {:.1f}m ({:.1f}m)'.format(self.right.radius_of_curvature, r)
+            center = 'Distance to lane center: {:.2f}m'.format(self.line_base_pos)
+        except:
+            left_curv = 'Left curvature {:.1f}m'.format(self.left.radius_of_curvature)
+            right_curv = 'Right curvature {:.1f}m'.format(self.right.radius_of_curvature)
+            center = 'Distance to lane center: {:.2f}m'.format(self.line_base_pos)
+        return [left_curv, right_curv, center]
     
     
     def warp_lane(self, Minv):
@@ -187,21 +232,14 @@ class Lane():
         newwarp = cv2.warpPerspective(color_warp, Minv, (Line.Nx, Line.Ny))
         
         # Add text
-        left_curv = 'Left curvature {:.1f}m'.format(self.left.radius_of_curvature)
-        right_curv = 'Right curvature {:.1f}m'.format(self.right.radius_of_curvature)
-        center = 'Distance to lane center: {:.2f}m'.format(self.line_base_pos)
-        cv2.putText(newwarp, left_curv, org=(25,40), fontFace=0,
+        text = self.output_string()
+        cv2.putText(newwarp, text[0], org=(25,40), fontFace=0,
                     fontScale=1, color=(0, 255, 0), thickness=2)
-        cv2.putText(newwarp, right_curv, org=(25,80), fontFace=0,
+        cv2.putText(newwarp, text[1], org=(25,80), fontFace=0,
                     fontScale=1, color=(0, 255, 0), thickness=2)
-        cv2.putText(newwarp, center, org=(25,120), fontFace=0,
+        cv2.putText(newwarp, text[2], org=(25,120), fontFace=0,
                     fontScale=1, color=(0, 255, 0), thickness=2)
-        try:
-            l, r = self.previous_curvatures()
-            cv2.putText(newwarp, '{:.1f}m, {:.1f}m'.format(l,r), org=(25,160), fontFace=0,
-                    fontScale=1, color=(0, 255, 0), thickness=2)
-        except:
-            pass
+        
         return newwarp
         # Combine the result with the original image
         #result = cv2.addWeighted(img, 1, newwarp, 0.3, 0)
