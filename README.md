@@ -9,7 +9,8 @@
 
 [image1]: ./Figures/Distortion.png "Undistorted"
 [image_test]: ./Figures/Test_images.png "Test images"
-[images_test_d]: ./Figures/Test_images_detected.png "Test images"
+[images_test_d]: ./Figures/Test_images_detected.png "Test images with detected lanes"
+[image_pipe]: ./Figures/Pipeline.png "Pipline"
 [video1]: ./Videos/video1_detected.mp4 "Video"
 
 ---
@@ -29,7 +30,18 @@ The software pipeline contains the following steps
 The pipeline was first tested on 8 test images and then on the video streams ...
 xx 
 
+---
 
+### Implementation
+The code is organised in three files: 
+- `undistort.py` Camera calibration and distortion correction functions
+- `lane_detection.py` Main program containing the lane detection pipeline
+- `lane.py` Definition of the two classes `Line` and `Lane`
+
+The `Line` class contains information about either the left or the right lane-line of a single image. An object of the `Lane` class consists of two elements of the `Line` class corresponding 
+to a left and right lane-lines. Further, it contains a memory of previous lane detections `Lane.previous`, so that the newly detected lane-lines can be compared to the previous ones.
+Functions which operate on a single line (polynomial fit, curvature calculation, ...) are methods of the `Line` class, while functions needing input from both lines (positional offset, plot, ...) are methods of the `Lane`class.
+In the following only the functional behavior of the code is discussed, but the source code is available in the above files for detailed inspection.
 
 ---
 
@@ -48,14 +60,14 @@ I then used the output `objpts` and `imgpts` to compute the camera calibration a
 The camera matrix of the camera used in this project is
 
 ```
-		1156.94	0		665.948
-mtx = 	0		1152.13	388.786
-		0		0		1
+	1156.94	0	665.948
+mtx = 	0	1152.13	388.786
+	0	0	1
 ```
 
 and the distortion parameters are `dist` = [-0.238, -0.085, -0.0008, -0.0001, 0.106].
 
-I applied this distortion correction to the test image using the `cv2.undistort()` function and obtained this result: 
+For an image of the calibration set, this distortion correction looks like the following. Their is also a third image illustrating the perspective transfrom based on the four outermost corners.
 
 ![alt text][image1]
 
@@ -72,9 +84,9 @@ The camera matrix `mtx` and the distortion parameters `dist` are the ones which 
 
 ### Lane detection pipeline
 
-The lane detection pipeline applied to a single image is summarised in the following graph. In the following the single steps are described in more detail.
+The lane detection pipeline applied to a single image is summarized in the following graph. In the following the single steps are described in more detail.
 
-![alt text][image]
+![alt text][image_pipe]
 
 #### 1. Distortion correction
 As a first step, the images are distortion corrected using the function described above
@@ -125,12 +137,6 @@ The parameters will be directly plotted into the resulting image
 
 #### 10. Pipeline applied to the 8 test images
 ![alt text][images_test_d]
-
----
-
-### Implementation
-The code is organised in two main classes: The `Line` class containing information about either the left or the right lane-line and the `Lane`class which has corresponding pair of left and right lane-lines as input.
-The `Lane` class further contains a memory `Lane.previous`, so that the newly detected lane-lines can be compared to the previous ones.
 
 ---
 
