@@ -10,7 +10,7 @@
 [image1]: ./Figures/Distortion.png "Undistorted"
 [image_test]: ./Figures/Test_images.png "Test images"
 [images_test_d]: ./Figures/Test_images_detected.png "Test images with detected lanes"
-[image_pipe]: ./Figures/Pipeline.png "Pipline"
+[image_pipe]: ./Figures/Pipeline/pipeline_0.png "Pipline"
 [video1]: ./Videos/video1_detected.mp4 "Video"
 
 ---
@@ -27,8 +27,9 @@ The software pipeline contains the following steps
 * Warping of the detected lane boundaries back onto the original image.
 * Visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
 
-The pipeline was first tested on 8 test images and then on the video streams ...
-xx 
+The pipeline was first tested on 8 test images and then on the video streams.
+
+![alt text][image_test]
 
 ---
 
@@ -85,6 +86,7 @@ The camera matrix `mtx` and the distortion parameters `dist` are the ones which 
 ### Lane detection pipeline
 
 The lane detection pipeline applied to a single image is summarized in the following graph. In the following the single steps are described in more detail.
+Here is an example image; the pipeline images for all test images can be found in the folder ["Figures/Pipeline"](./Figures/Pipeline/).
 
 ![alt text][image_pipe]
 
@@ -94,19 +96,15 @@ As a first step, the images are distortion corrected using the function describe
 #### 2. HLS colour space
 Next, the image is converted to the HLS colour space using ```cv2.cvtColor(image, cv2.COLOR_RGB2HLS).astype(np.float)```.
 The HLS space has the advantage that the image is separated in hue (H), lightness (L) and saturation (S) channels. Differences in illumination (e.g. tree shadows) will not affect the saturation channel.
-Hence, thresholds of the saturation channel are more universal than thresholds of a colour (red, green, blue) channel.
+Hence, thresholds of the lightness and saturation channel are more universal than thresholds of a colour (red, green, blue) channel.
+The HLS decomposition of the test images can be found in the folder ["Figures/HLS"](./Figures/HLS/).
+
+#### 3. Threshold of lightness and saturation channel
 The lightness channel measures the amount of white. It can be efficiently used with a high threshold to detect white line markings (which are not obscured by shadows). Although it can only a detect a limited fraction of the lane 
 i.e. intensive white stripes, it does it with high confidentiality and hence is a good starting point to make the pipeline more robust.
 The saturation channel detects the intensive yellow lines and partly the white lines. A threshold of the saturation channel is therefore used as backbone of the pipeline.
-
-
-![alt text] [image_hls]
-
-#### 3. Threshold of saturation channel
-...
-...
-...
-binary output image
+Optionally, a threshold of the sobel line detection of the lightness channel could be used. However, in the following code it was not used.
+The result of the different thresholds is a combined binary images containing potential lane line pixels.
 
 #### 4. Perspective Transform
 The binary images are transformed to a birds-eye view using the function ```birdseye(image, src, dst)```. For this end, four points spanning a straight lane (on test image 0 ) are selected. These are transformed to the corners of a new, birds-eye view image.
@@ -114,30 +112,39 @@ These source and destination points were hard-coded:
 
 | Source        | Destination   | 
 |:-------------:|:-------------:| 
-| 585, 460      | 320, 0        | 
-| 203, 720      | 320, 720      |
-| 1127, 720     | 960, 720      |
-| 695, 460      | 960, 0        |
+| 578, 460      | 150, 0        | 
+| 235, 690      | 150, 720      |
+| 1069, 690     | 1150, 720      |
+| 705, 460      | 1150, 0        |
  
-
+These areas are displayed in red in the above pipeline figure. The birds-eye view of the test images can be found in the folder ["Figures/Birdseye"](./Figures/Birdseye/).
+ 
 #### 5. Lane-line pixel selection
-sliding window depending if previous lane is provided or not.
+When no previous lane is provided or the previous fit was insufficient, the lane line pixels are detected from scratch. For that end a sliding window approach is chosen (function `_sliding_window()`).
+The windows are sliding in vertical/y direction. For every window, the histogram in horizontal/z direction is taken and the two peaks (one for each lane line) are detected. All points around a margin (here +- 50 pixel) are assumed to be lane line pixel.
+
+If a previous lane is provided, new lane-line pixels are only searched in a small window (+- 50 pixel margin) around the previous lane.
 
 #### 6. 2nd order polynomial describing the lanes in birdseye view
 In birdseye view, the lane lines can be described by a second order polynomial. The polynomials are fitted to all detected lane-line pixels. The area between the left and right line polynomial is then ascribed to the lane.
+The user can choose between only fitting the lane-line pixel of the current image (`Line.fit_lane`) or including also lane-line pixel of the (last three) previously detected lanes (`Line.fit_lane_incl_previous`)
+This functionality is inside the `Line` class.
+
+The fit result is displayed in yellow in the above pipeline figure.
 
 #### 7. Derived parameters
 Several parameters can be calculated from the resulting lane. These parameters can then be used to check whether the result is reasonable.
-First, the curvature for every lane line is calculated from the polynomial.
-...
-Offset from lane center.
-...
-
-The parameters will be directly plotted into the resulting image
+First, the curvature for every lane line is calculated from the polynomial. Then the offset from lane center. They are displayed in the upper left corner of the result image.
 
 #### 8. Sanity check
-... checks ... restart if necessary ...
+The derived parameters have to fullfill several conditions to be considered reasonable (`Lane.check_sanity`):
+- the lane was detected on both sides
+- the car is driving in the lane center (+- 1m)
+- the left and right curvatures are similar (+- 250m) or the line is straight (>1000m)
+- the curvature is in the same direction (check difference in fit coefficients of left and right lane)
 
+If any of the conditions does not hold, the sliding window approach is first reseted i.a. the lane-line pixels are searched from scratch.
+If the lane detection is still unsuccessful, the previous fit is applied and the image is skipped.
 
 #### 10. Pipeline applied to the 8 test images
 ![alt text][images_test_d]
@@ -145,7 +152,7 @@ The parameters will be directly plotted into the resulting image
 ---
 
 ### Result
-The above pipeline was then applied to the video provided by Udacity. The result can be seen [here] (./Videos/video1_detected.mp4)
+The above pipeline was then applied to the video provided by Udacity. The result can be seen [here](./Videos/video1_detected.mp4)
 
 
 ---
@@ -153,7 +160,7 @@ The above pipeline was then applied to the video provided by Udacity. The result
 ### Discussion: Challenges and improvements
 
 - Perspective Transform
-The selection of the source points for the perspective tranform is important as the quality of the warped images and therefore polynomial fit is highly sensitive to it. These points were selected by hand. It might be possible to 
+The selection of the source points for the perspective transform is important as the quality of the warped images and therefore polynomial fit is highly sensitive to it. These points were selected by hand. It might be possible to 
 improve the pipeline by barely tweaking these source points. E.g. by reducing the vertical extension of the lane, the pipeline becomes more robust on the one hand but the detected lane is shorter on the other hand.
 
 - Missing stripes
